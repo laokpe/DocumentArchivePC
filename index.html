@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>نظام أرشفة المستندات</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f3f6fb;color:#172033}
+header{background:#1769c2;color:white;padding:22px 16px;text-align:center;font-size:25px;font-weight:bold;box-shadow:0 3px 12px #0002}
+main{padding:22px;max-width:1120px;margin:auto}
+.panel{background:white;border-radius:16px;padding:22px;margin:14px 0;box-shadow:0 3px 12px #0001}
+button{border:0;border-radius:12px;padding:14px 18px;font-size:17px;width:100%;margin:7px 0;color:white;background:#1769c2;cursor:pointer}
+button:hover{filter:brightness(.96)}
+button:disabled{opacity:.55;cursor:wait}
+button.purple{background:#7650b8}button.light{background:#e9eef7;color:#18243a}button.green{background:#18834b}button.orange{background:#bd7621}
+input,select{width:100%;padding:13px;border:1px solid #ccd4e0;border-radius:10px;font-size:16px;margin:7px 0 14px;background:white}
+label{display:block;font-weight:bold;margin-top:10px}
+.small{font-size:14px;color:#566176;line-height:1.7}
+.hidden{display:none!important}
+.home-buttons{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-top:24px}
+.home-buttons button{min-height:100px;font-size:19px}
+#addImagePreview,#previewImage{display:none;width:100%;max-height:62vh;height:auto;object-fit:contain;border-radius:12px;background:#edf1f7;margin:12px 0}
+.preview-box{border:2px dashed #b9c9dc;border-radius:14px;padding:18px;text-align:center;margin-top:15px;background:#f8faff}
+.result{border-bottom:1px solid #e1e5ec;padding:14px 0}
+.result button{font-size:15px;padding:11px}
+.status{padding:10px 12px;background:#f4f7fb;border-radius:9px;min-height:38px}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:700px){main{padding:12px}.home-buttons{grid-template-columns:1fr}.actions{grid-template-columns:1fr}header{font-size:21px}}
+</style>
+</head>
+<body>
+<header>📁 نظام أرشفة المستندات</header>
+<main>
+<section id="home" class="panel">
+<h2 style="text-align:center">الصفحة الرئيسية</h2>
+<p style="text-align:center">كل مستنداتك في مكان واحد</p>
+<div class="home-buttons">
+<button onclick="showAdd()">➕<br>إضافة مستند</button>
+<button class="purple" onclick="showSearch()">🔎<br>البحث</button>
+<button class="light" onclick="pickArchive()">📁<br>اختيار مجلد الأرشيف</button>
+</div>
+<p class="small status" id="archiveStatus">لم يتم اختيار مجلد الأرشيف بعد.</p>
+</section>
+
+<section id="add" class="panel hidden">
+<button class="light" onclick="showHome()">← رجوع</button>
+<h2>إضافة مستند</h2>
+<label for="docName">رقم المستند</label>
+<input id="docName" placeholder="اكتب رقم المستند فقط" inputmode="numeric">
+<label for="year">السنة</label>
+<select id="year"><option value="">اختر السنة</option></select>
+<button class="green" onclick="openCamera()">📷 فتح الكاميرا</button>
+<button class="light" onclick="pickImage()">🖼️ اختيار صورة من الكمبيوتر</button>
+<div class="preview-box">
+<p>معاينة صورة المستند</p>
+<p class="small" id="imageStatus">لم يتم اختيار صورة.</p>
+<img id="addImagePreview" alt="صورة المستند">
+</div>
+<button onclick="save()">حفظ المستند</button>
+<p id="saveStatus" class="small status"></p>
+</section>
+
+<section id="search" class="panel hidden">
+<button class="light" onclick="showHome()">← رجوع</button>
+<h2>البحث عن مستند</h2>
+<input id="query" placeholder="اكتب رقم المستند أو جزءاً منه" onkeydown="if(event.key==='Enter')doSearch()">
+<button class="purple" onclick="doSearch()">بحث داخل الأرشيف</button>
+<div id="results"></div>
+</section>
+
+<section id="preview" class="panel hidden">
+<button class="light" onclick="showSearch()">← رجوع إلى نتائج البحث</button>
+<h2>معاينة المستند</h2>
+<p id="previewInfo" class="small"></p>
+<img id="previewImage" alt="معاينة المستند">
+<p id="previewStatus" class="small"></p>
+<div class="actions">
+<button class="green" onclick="printCurrentImage()">🖨️ طباعة المستند</button>
+<button class="light" onclick="openCurrentImage()">📂 فتح الصورة</button>
+</div>
+</section>
+</main>
+
+<script>
+let selectedImagePath="";
+let currentResults=[];
+let currentPreviewPath="";
+
+function showOnly(id){["home","add","search","preview"].forEach(x=>document.getElementById(x).classList.toggle("hidden",x!==id));}
+function showHome(){showOnly("home");}
+async function showAdd(){showOnly("add");await loadYears();}
+function showSearch(){showOnly("search");}
+
+async function refreshArchiveStatus(){
+ try{
+  const p=await window.pywebview.api.get_archive_path();
+  document.getElementById("archiveStatus").textContent=p?"مجلد الأرشيف: "+p:"لم يتم اختيار مجلد الأرشيف بعد.";
+ }catch(e){}
+}
+async function pickArchive(){
+ const p=await window.pywebview.api.pick_archive();
+ if(p){await refreshArchiveStatus();await loadYears();}
+}
+async function openCamera(){
+ const msg=await window.pywebview.api.open_camera();
+ document.getElementById("imageStatus").textContent=msg;
+}
+async function pickImage(){
+ const item=await window.pywebview.api.pick_image();
+ if(!item)return;
+ selectedImagePath=item.path;
+ document.getElementById("imageStatus").textContent="الصورة المختارة: "+item.name;
+ document.getElementById("saveStatus").textContent="";
+ const img=document.getElementById("addImagePreview");
+ img.style.display="block";
+ img.src=await window.pywebview.api.get_image_data(item.path);
+}
+async function loadYears(){
+ const s=document.getElementById("year");
+ const old=s.value;
+ s.innerHTML='<option value="">اختر السنة</option>';
+ try{
+  const years=await window.pywebview.api.get_years();
+  years.forEach(y=>{const o=document.createElement("option");o.value=y;o.textContent=y;s.appendChild(o);});
+  if(years.includes(old))s.value=old;
+ }catch(e){}
+}
+async function save(){
+ const n=document.getElementById("docName").value.trim();
+ const y=document.getElementById("year").value;
+ const status=document.getElementById("saveStatus");
+ if(!n||!y){status.textContent="اكتب رقم المستند واختر السنة.";return;}
+ if(!selectedImagePath){status.textContent="اختَر صورة المستند أولاً.";return;}
+ const result=await window.pywebview.api.save_document(n,y,selectedImagePath);
+ status.textContent=result.message;
+ if(result.ok){
+  document.getElementById("docName").value="";
+  document.getElementById("year").value="";
+  selectedImagePath="";
+  document.getElementById("imageStatus").textContent="لم يتم اختيار صورة.";
+  const img=document.getElementById("addImagePreview");img.removeAttribute("src");img.style.display="none";
+ }
+}
+async function doSearch(){
+ const q=document.getElementById("query").value.trim();
+ const box=document.getElementById("results");box.textContent="جارٍ البحث...";
+ try{currentResults=await window.pywebview.api.search_documents(q);}catch(e){currentResults=[];}
+ box.innerHTML="";
+ if(!currentResults.length){box.textContent="لا توجد ملفات مطابقة داخل مجلدات الأرشيف.";return;}
+ currentResults.forEach((r,i)=>{
+  const d=document.createElement("div");d.className="result";
+  const p=document.createElement("p");p.textContent="الملف: "+r.file+" — السنة: "+r.year;
+  const b=document.createElement("button");b.textContent="👁️ معاينة داخل التطبيق";b.onclick=()=>openPreview(i);
+  d.append(p,b);box.appendChild(d);
+ });
+}
+async function openPreview(i){
+ const r=currentResults[i];if(!r)return;
+ currentPreviewPath=r.path;showOnly("preview");
+ document.getElementById("previewInfo").textContent="الملف: "+r.file+" — السنة: "+r.year;
+ const img=document.getElementById("previewImage");img.style.display="block";img.removeAttribute("src");
+ document.getElementById("previewStatus").textContent="جارٍ تحميل المعاينة...";
+ try{img.src=await window.pywebview.api.get_image_data(r.path);document.getElementById("previewStatus").textContent="";}
+ catch(e){img.style.display="none";document.getElementById("previewStatus").textContent="تعذرت معاينة هذه الصورة.";}
+}
+async function printCurrentImage(){
+ if(!currentPreviewPath)return;
+ const msg=await window.pywebview.api.print_image(currentPreviewPath);
+ document.getElementById("previewStatus").textContent=msg;
+}
+async function openCurrentImage(){
+ if(!currentPreviewPath)return;
+ await window.pywebview.api.open_image(currentPreviewPath);
+}
+window.addEventListener("pywebviewready",refreshArchiveStatus);
+</script>
+</body>
+</html>
